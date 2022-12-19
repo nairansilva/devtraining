@@ -1,3 +1,5 @@
+import { Tag } from './entities/tag.entity';
+import { EditCourseDto } from './dto/create-course.dto/edit-course.dto';
 import { CreateCourseDto } from './dto/create-course.dto/create-course.dto';
 import {
   HttpException,
@@ -14,14 +16,22 @@ export class CoursesService {
   constructor(
     @InjectRepository(Course)
     private readonly courseRepository: Repository<Course>,
+
+    @InjectRepository(Tag)
+    private readonly tagRepository: Repository<Tag>,
   ) {}
 
   findAll() {
-    return this.courseRepository.find();
+    return this.courseRepository.find({
+      relations: ['tags'],
+    });
   }
 
-  byId(id: FindOneOptions<Course>) {
-    const course = this.courseRepository.findOne(id);
+  async byId(id: string) {
+    const course = await this.courseRepository.findOne({
+      where: { id: +id },
+      relations: ['tags'],
+    });
     if (!course) {
       // throw new HttpException(
       //   `Curso ${id} não encontrado`,
@@ -32,34 +42,57 @@ export class CoursesService {
     return course;
   }
 
-  create(createCourseDto: CreateCourseDto) {
-    const course = this.courseRepository.create(createCourseDto);
+  async create(createCourseDto: CreateCourseDto) {
+    const tags = await Promise.all(
+      createCourseDto.tags.map((name) => this.preLoadTagByName(name)),
+    );
+    const course = this.courseRepository.create({ ...createCourseDto, tags });
+
     return this.courseRepository.save(course);
   }
 
-  update(id: string, updateCourseDto: any) {
-    const indexCourse = this.course.findIndex(
-      (courseFind: Course) => courseFind.id == Number(id),
-    );
+  async update(id: string, updateCourseDto: EditCourseDto) {
+    const tags =
+      updateCourseDto.tags &&
+      (await Promise.all(
+        updateCourseDto.tags.map((name) => this.preLoadTagByName(name)),
+      ));
 
-    if (indexCourse >= 0) {
-      this.course[indexCourse] = updateCourseDto;
-      return updateCourseDto;
-    } else {
-      throw new HttpException(
-        `Curso ${id} não encontrado`,
-        HttpStatus.NOT_FOUND,
-      );
+    const course = await this.courseRepository.preload({
+      id: +id, // o + converte a string pra numérico
+      ...updateCourseDto,
+      tags,
+    });
+
+    if (!course) {
+      // throw new HttpException(
+      //   `Curso ${id} não encontrado`,
+      //   HttpStatus.NOT_FOUND,
+      // );
+      throw new NotFoundException(`Curso ${id} não encontrado`);
     }
+
+    return this.courseRepository.save(course);
   }
 
-  delete(id: string) {
-    const indexCourse = this.course.findIndex(
-      (courseFind: Course) => courseFind.id == Number(id),
-    );
+  async delete(id: string) {
+    const course = await this.courseRepository.findOne({ id: +id });
 
-    if (indexCourse >= 0) {
-      this.course.splice(indexCourse, 1);
+    if (!course) {
+      throw new NotFoundException(`Curso ${id} não encontrado`);
+    }
+
+    this.courseRepository.remove(course);
+    return `Id ${id} excluído com Sucesso!`;
+  }
+
+  private async preLoadTagByName(name: string): Promise<Tag> {
+    const tag = await this.tagRepository.findOne({ name: name });
+
+    if (tag) {
+      return tag;
+    } else {
+      return this.tagRepository.create({ name: name });
     }
   }
 }

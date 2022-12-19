@@ -12,6 +12,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { EditCourseDto } from './dto/create-course.dto/edit-course.dto';
+import { FindOneOptions } from 'typeorm';
+import { Course } from './entities/course.entity';
 
 @Controller('courses')
 export class CoursesController {
